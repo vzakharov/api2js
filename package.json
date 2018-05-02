@@ -11,5 +11,8 @@
     "url": "rest2js"
   },
   "author": "Vova Zakharov",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.18.0"
+  }
 }
