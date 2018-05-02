@@ -1,58 +1,86 @@
-let axios = require('axios')
+let Axios = require('axios')
+let _ = require('lodash')
 
 module.exports = function(schema) {
 
+    let axiosInit = _.pick(schema, ['baseUrl'])
+    let axios = Axios.create(axiosInit)
+
+    let {credentials} = schema
+
+    if (credentials) {
+        
+    }
+
     let out = {}
 
-    for (let str of schema) {
+    for (let str of schema.methods) {
         let feed = str.split(/\s+/)
         let method = feed.shift()
         let url = feed.shift()
         let breadcrumbs = url.split('/')
         
         let edge = out
+        let item
 
-        for (let item of breadcrumbs) {
+        while (breadcrumbs.length > 0) {
+            item = breadcrumbs.shift()
+            if (breadcrumbs.length == 0) {
+                break
+            }
             if (!edge[item]) {
                 edge[item] = {}
             }
             edge = edge[item]
         }
         
-        let kindOfParameter
-        let args = []
-        let options = []
+        let parameters = []
 
         for (let item of feed) {
             switch(item) {
                 case '?': 
-                    kindOfParameter = 'params'
-                    break
+                    kind = 'params'
+                    continue
                 case '+':
-                    kindofParameter = 'data'
-                    break
+                    kind = 'data'
+                    continue
                 default:
-                    let matches = item.match(/(.+?)(!)?/)
-                    let parameterName = matches[1]
-                    let parameterArray = options
+                    let matches = item.match(/^(.+?)(!)?$/)
+                    let name = matches[1]
+                    let passedVia = 'options'
                     if (matches[2]) {
-                        parameterArray = args
+                        passedVia = 'args'
                     }
-                    parameterArray.push(parameterName)
-
+                    parameters.push({kind, name, passedVia})
             }    
         }
 
 
-        edge = async function() {
-            for (let i = 0; i < args.length; i++) {
-                parameters[args[i]].value = arguments[i]
+        edge[item] = async function() {
+            let i = 0
+
+            let options = _.last(arguments)
+
+            for (let parameter of parameters) {
+                if (parameter.passedVia == 'args') {
+                    parameter.value = arguments[i]
+                    i++
+                } else {
+                    parameter.value = options[parameter.name]
+                }
             }
 
-            let {data, params} = parameters
+            let parametersByKind = {data: {}, params: {}}
+
+            for (let parameter of parameters) {
+                let {name} = parameter
+                parametersByKind[parameter.kind][name] = parameter.value
+            }
+
+            let {data, params} = parametersByKind
 
             try {
-                let response = await axios({method, url, data, params})
+                let response = await axios.request({method, url, data, params})
             } catch(error) {
                 throw error
             }
@@ -62,4 +90,5 @@ module.exports = function(schema) {
         }
     }
     
+    return out
 }
