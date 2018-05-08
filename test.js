@@ -3,8 +3,13 @@ main()
 async function main() {
     let rest2js = require('./rest2js')
     let schema = require('./testSchema.json')
+    let credentials = require('./credentials.json')
 
-    let obj = rest2js(schema)
+    let smartcat = rest2js(schema, {
+        credentials: credentials.smartcat
+    })
 
-    await obj.document.assignFreelancers(1, 2, [3])
+    console.log(await smartcat.account.searchMyTeam())
+
+    return
 }

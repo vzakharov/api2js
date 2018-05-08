@@ -1,19 +1,20 @@
 {
-  "name": "rest2js",
+  "name": "api2js",
   "version": "0.1.0",
-  "description": "Turns RESTful Web APIs into Javascript objects",
-  "main": "index.js",
+  "description": "Turns Web APIs into Javascript objects",
+  "main": "api2js.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
-    "url": "rest2js"
+    "url": "api2js"
   },
   "author": "Vova Zakharov",
   "license": "ISC",
   "dependencies": {
     "axios": "^0.18.0",
-    "lodash": "^4.17.10"
+    "lodash": "^4.17.10",
+    "xml-js": "^1.6.2"
   }
 }

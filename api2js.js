@@ -1,16 +1,34 @@
 let Axios = require('axios')
 let _ = require('lodash')
 
-module.exports = function(schema) {
+module.exports = function(schema, options) {
 
-    let axiosInit = _.pick(schema, ['baseUrl'])
-    let axios = Axios.create(axiosInit)
-
-    let {credentials} = schema
-
-    if (credentials) {
-        
+    function crawl(obj) {
+        for (let key in obj) {
+            let value = obj[key]
+            switch(typeof value) {
+                case 'object':
+                    crawl(value)
+                    continue
+                case 'string':
+                    let match
+                    while(match = value.match(/:[\w\d_.]+/)) {
+                        let str = match[0]
+                        let keys = str.slice(1).split('.')
+                        let node = options
+                        for (let key of keys) {
+                            node = node[key]
+                        }
+                        value = value.replace(str, node)
+                        obj[key] = value
+                    }
+            }
+        }
     }
+
+    let {defaults} = schema
+    crawl(defaults)
+    let axios = Axios.create(defaults)
 
     let out = {}
 
@@ -81,11 +99,10 @@ module.exports = function(schema) {
 
             try {
                 let response = await axios.request({method, url, data, params})
+                return response.data
             } catch(error) {
                 throw error
             }
-
-            return response.data
 
         }
     }
