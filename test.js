@@ -1,15 +1,10 @@
+const fs = require('fs')
+
 main() 
 
 async function main() {
-    let rest2js = require('./rest2js')
-    let schema = require('./testSchema.json')
-    let credentials = require('./credentials.json')
+    let api2js = require('./api2js')
+    let schema = fs.readFileSync('./smartcatSchema.xml', 'utf-8')
 
-    let smartcat = rest2js(schema, {
-        credentials: credentials.smartcat
-    })
-
-    console.log(await smartcat.account.searchMyTeam())
-
-    return
+    return api2js(schema)
 }

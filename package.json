@@ -2,7 +2,7 @@
   "name": "api2js",
   "version": "0.1.0",
   "description": "Turns Web APIs into Javascript objects",
-  "main": "api2js.js",
+  "main": "test.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,6 +15,7 @@
   "dependencies": {
     "axios": "^0.18.0",
     "lodash": "^4.17.10",
-    "xml-js": "^1.6.2"
+    "xml-js": "^1.6.2",
+    "xml2js": "^0.4.19"
   }
 }

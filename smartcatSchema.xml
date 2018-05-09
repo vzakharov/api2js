@@ -1,43 +1,49 @@
-<api>
-    <_ version="v1">
-        <project>
-            <_ args="projectID" argType="path">
-                <_ methods="get,put,delete" />
-                <statistics params="onlyExactMatches"> 
-                    <_ version="v2" />
-                    <build methods="post">
-                </statistics>
-                <completedWorkStatistics />
-                <translationmemories>
-                    <_direct_ methods="get,post" />
-                    <byLanguages methods="post" />
-                </translationmemories>
-                <glossaries methods="get,put" />
-            </_>
-            <_ methods="post" args="projectID">
-                <cancel />
-                <complete />
-                <_ includeMethod="true">
-                    <document params="disassembleAlgorithmName,externalId,metaInfo,targetLanguages" />
-                    <language args="targetLanguage" />
+<?xml version="1.0" ?>
+<schema>
+    <api>
+        <_ version="v1" methods="get">
+            <project>
+                <list />
+                <create methods="post" />
+                <_ args="projectID" argType="path">
+                    <_ methods="get,put,delete" />
+                    <statistics> 
+                        <_ version="v2" />
+                        <build methods="post" />
+                    </statistics>
+                    <completedWorkStatistics />
+                    <translationmemories>
+                        <_ methods="get,post" />
+                        <byLanguages methods="post" verbalize="true" />
+                    </translationmemories>
+                    <glossaries methods="get,put" />
+                    <_ methods="post" argType="query">
+                        <cancel />
+                        <complete />
+                        <_ verbalize="true">
+                            <document />
+                            <language args="targetLanguage" />
+                        </_>
+                    </_>
                 </_>
-            </_>
-            <list params="createdByUserId,projectName,externalTag,clientIds" />
-            <create methods="post" />
-        </project>
-        <document>
-            <_ args="documentIds">
-                <_ methods = "delete" />
-                <export params="type,stageNumber"/>
-            </_>
-            <_ args="documentId">
-                <_ methods="get" />
-                <assign args="stageNumber" methods="post" />
-                <translateWithXliff args="translationFile" argType="formData" params="confirmTranslation,overwriteUpdatedSegments" />
-            </_>
-        </document>
-        <invoice>
-            <job args="freelancerId,serviceType,unitsAmount,unitsType,pricePerUnit,currency" argType="body" type="hidden" includeMethod="true" />
-        </invoice>
-    </_>
-</api>
+            </project>
+            <document>
+                <_ args="documentIds">
+                    <_ methods="delete" />
+                    <export>
+                        <_ noBody="true" methods="post" />
+                        <_ methods="get" verbal="true" args="taskId" removeArgs="true" />
+                    </export>
+                </_>
+                <_ args="documentId">
+                    <_ methods="get" />
+                    <assign args="stageNumber" methods="post" />
+                    <translateWithXliff methods="put" args="translationFile" argType="formData" noBody="true" />
+                </_>
+            </document>
+            <invoice>
+                <job methods="post" verbalize="true" args="freelancerId,serviceType,unitsAmount,unitsType,pricePerUnit,currency" argType="body" />
+            </invoice>
+        </_>
+    </api>
+</schema>

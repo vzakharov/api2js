@@ -1,111 +1,73 @@
-let Axios = require('axios')
-let _ = require('lodash')
+const xml2js = require('xml2js')
+const Axios = require('axios')
+const _ = require('lodash')
 
-module.exports = function(schema, options) {
-
-    function crawl(obj) {
-        for (let key in obj) {
-            let value = obj[key]
-            switch(typeof value) {
-                case 'object':
-                    crawl(value)
-                    continue
-                case 'string':
-                    let match
-                    while(match = value.match(/:[\w\d_.]+/)) {
-                        let str = match[0]
-                        let keys = str.slice(1).split('.')
-                        let node = options
-                        for (let key of keys) {
-                            node = node[key]
-                        }
-                        value = value.replace(str, node)
-                        obj[key] = value
-                    }
-            }
-        }
-    }
-
-    let {defaults} = schema
-    crawl(defaults)
-    let axios = Axios.create(defaults)
-
+function readSchema(xml) {
+    let js
     let out = {}
 
-    for (let str of schema.methods) {
-        let feed = str.split(/\s+/)
-        let method = feed.shift()
-        let url = feed.shift()
-        let breadcrumbs = url.split('/')
-        
-        let edge = out
-        let item
+    let attrkey = 'attributes'
+    let childkey = 'children'
 
-        while (breadcrumbs.length > 0) {
-            item = breadcrumbs.shift()
-            if (breadcrumbs.length == 0) {
-                break
-            }
-            if (!edge[item]) {
-                edge[item] = {}
-            }
-            edge = edge[item]
-        }
-        
-        let parameters = []
+    xml2js.parseString(xml, {
+        explicitArray: false,
+        explicitChildren: true,        
+        charkey: '_text',
+        childkey, attrkey
+    }, (err, result) => {
+        js = result
+    })
 
-        for (let item of feed) {
-            switch(item) {
-                case '?': 
-                    kind = 'params'
-                    continue
-                case '+':
-                    kind = 'data'
-                    continue
-                default:
-                    let matches = item.match(/^(.+?)(!)?$/)
-                    let name = matches[1]
-                    let passedVia = 'options'
-                    if (matches[2]) {
-                        passedVia = 'args'
-                    }
-                    parameters.push({kind, name, passedVia})
-            }    
-        }
+    crawl(js.schema.children.api, [], {}, out)
 
+    function crawl(parent, parentPath, parentOptions, out) {
+        let children = parent.children
 
-        edge[item] = async function() {
-            let i = 0
+        for (let key in children) {
+            let path = parentPath.slice()
 
-            let options = _.last(arguments)
+            let item = children[key]
 
-            for (let parameter of parameters) {
-                if (parameter.passedVia == 'args') {
-                    parameter.value = arguments[i]
-                    i++
-                } else {
-                    parameter.value = options[parameter.name]
+            if (_.isArray(item)) {
+                let siblings = item
+                for (let sibling of siblings) {
+                    crawl(sibling, path, parentOptions, out)
                 }
             }
 
-            let parametersByKind = {data: {}, params: {}}
+            let child = item
 
-            for (let parameter of parameters) {
-                let {name} = parameter
-                parametersByKind[parameter.kind][name] = parameter.value
+            let options = _.assign({}, parentOptions)
+            _.assign(options, child.attributes)
+
+            if (key != '_') {
+                path.push(key)
             }
 
-            let {data, params} = parametersByKind
+            if (child.children) {
+                crawl(child, path, options, out)
+            } else {
+                let url = _.flatten([options.version, path]).join('/')
+                let obj = out
+                let lastProperty = path.pop()
 
-            try {
-                let response = await axios.request({method, url, data, params})
-                return response.data
-            } catch(error) {
-                throw error
+                for (property of path) {
+                    if (!obj[property]) {
+                        obj[property] = {}
+                    }
+                    obj = obj[property]
+                }
+
+                obj[lastProperty] = function(args) {
+                    let allParameters = args[options.args.length]
+                }
+
+                return out
             }
-
         }
     }
-    
+
     return out
 }
+
+module.exports = readSchema
