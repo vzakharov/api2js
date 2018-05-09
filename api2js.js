@@ -58,8 +58,14 @@ function readSchema(xml) {
                     obj = obj[property]
                 }
 
+                let tmp = obj[lastProperty]
+
                 obj[lastProperty] = function(args) {
                     let allParameters = args[options.args.length]
+                }
+
+                if (tmp) {
+                    _.assign(obj[lastProperty], tmp)
                 }
 
                 return out
