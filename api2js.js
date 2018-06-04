@@ -1,79 +1,69 @@
-const xml2js = require('xml2js')
 const Axios = require('axios')
 const _ = require('lodash')
+const {
+    assign, pick
+} = _
+const allMethods = 'get post put patch delete'.split(' ')
+const methodsWithData = 'post put patch'.split(' ')
 
-function readSchema(xml) {
-    let js
-    let out = {}
+function prepare(api, stem, path = '') {
 
-    let attrkey = 'attributes'
-    let childkey = 'children'
-
-    xml2js.parseString(xml, {
-        explicitArray: false,
-        explicitChildren: true,        
-        charkey: '_text',
-        childkey, attrkey
-    }, (err, result) => {
-        js = result
-    })
-
-    crawl(js.schema.children.api, [], {}, out)
-
-    function crawl(parent, parentPath, parentOptions, out) {
-        let children = parent.children
-
-        for (let key in children) {
-            let path = parentPath.slice()
-
-            let item = children[key]
-
-            if (_.isArray(item)) {
-                let siblings = item
-                for (let sibling of siblings) {
-                    crawl(sibling, path, parentOptions, out)
-                }
-            }
-
-            let child = item
-
-            let options = _.assign({}, parentOptions)
-            _.assign(options, child.attributes)
-
-            if (key != '_') {
-                path.push(key)
-            }
-
-            if (child.children) {
-                crawl(child, path, options, out)
-            } else {
-                let url = _.flatten([options.version, path]).join('/')
-                let obj = out
-                let lastProperty = path.pop()
-
-                for (property of path) {
-                    if (!obj[property]) {
-                        obj[property] = {}
-                    }
-                    obj = obj[property]
-                }
-
-                let tmp = obj[lastProperty]
-
-                obj[lastProperty] = function(args) {
-                    let allParameters = args[options.args.length]
-                }
-
-                if (tmp) {
-                    _.assign(obj[lastProperty], tmp)
-                }
-
-                return out
-            }
-        }
+    if (!stem) {
+        stem = api
+        api.axios = Axios.create(api.defaults)
+        api = api.methods
     }
 
-    return out
+    for (let branch in api) {
+
+        let leaf = api[branch]
+
+        if (typeof leaf == 'function') {
+
+            api[branch] = async function () {
+                let schema = leaf(... arguments)
+                for (let method in pick(schema, allMethods)) {
+
+                    let args = schema[method]
+                    
+                    if (!Array.isArray(args)) args = [args]
+
+                    let url = `${path}/${branch}`
+
+                    if (typeof args[0] == 'string') {
+                        url = `${url}/${args.shift()}`
+                    }
+
+                    let data = methodsWithData.includes(method) && args.shift()
+                    let params = args.shift()
+
+                    let config = {url, method}
+                    if (data) assign(config, {data})
+                    if (params) assign(config, {params})
+                    
+                    try {
+                        let response = await stem.axios.request(config)
+                        let {_header} = response.request
+                        let {status, data} = response
+                        console.log({_header, status, data})
+                        return data
+                    } catch(error) {
+                        throw(error)
+                    }
+                }    
+            }
+
+        } else {
+
+            prepare(leaf, stem, `${path}/${branch}`)
+
+        }
+
+    }
+
+    return api
+
 }
 
-module.exports = readSchema
+
+module.exports = {prepare}
