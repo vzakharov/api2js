@@ -1,7 +1,7 @@
 const Axios = require('axios')
 const _ = require('lodash')
 const {
-    assign, clone, isArray, omit, pick
+    assign, clone, compact, isArray, map, omit, pick
 } = _
 
 const Form = require('form-data')
@@ -38,17 +38,23 @@ function prepare(api, stem, path = '', defaults = {}) {
 
         if (typeof leaf == 'function') {
 
-            api[branch] = async function () {
+            api[branch] = function () {
 
                 let schema = leaf(... arguments)
 
-                if (schema._deep) {
+                let {_deep} = schema
+                if (_deep) {
 
-                    let subApi = {
-                        methods: schema,
-                        defaults: assign({}, stem.defaults, defaults)
-                    }
-                    prepare(subApi)
+                    // let subApi = {
+                    //     methods: schema,
+                    //     defaults: assign({}, stem.defaults, defaults)
+                    // }
+
+                    let subPath = compact([path, branch, _deep.url]).join('/')
+
+                    prepare(schema, stem, subPath, clone(defaults))
+
+                    return schema
                     
                 } else {
 
@@ -100,26 +106,27 @@ function prepare(api, stem, path = '', defaults = {}) {
         
                         }
                                             
-                        let tryExecute = async () => {
+                        var tryExecute = new Promise((resolve, reject) => {
                             console.log(config)
-                            let response = await stem.axios.request(config)
-                            let {_header} = response.request
-                            let {status, data} = response
-                            console.log({status, data})
-                            return data
-                        }
+                            stem.axios.request(config).then(response => {
+                                let {_header} = response.request
+                                let {status, data} = response
+                                console.log({status, data})
+                                resolve(data)    
+                            }).catch(error => {
+                                console.log(error)
+                                // let {response} = error
+                                // if (response && response.status == 500) return
+                                if (error.response) throw (error)
+                                sleep(10000).then(() => {
+                                    resolve(tryExecute)
+                                })
+                            })
+                        })
     
-                        try {
-                            return await tryExecute()
-                        } catch(error) {
-                            console.log(error)
-                            // let {response} = error
-                            // if (response && response.status == 500) return
-                            if (error.response) throw (error)
-                            await sleep(10000)
-                            return await tryExecute()
-                        }
                     }
+
+                    return tryExecute
 
                 }
 
