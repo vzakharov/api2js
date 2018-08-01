@@ -1,7 +1,7 @@
 const Axios = require('axios')
 const _ = require('lodash')
 const {
-    assign, clone, compact, isArray, map, omit, pick
+    assign, clone, compact, isArray, isEmpty, omit, pick
 } = _
 
 const Form = require('form-data')
@@ -14,19 +14,13 @@ const {
 const allMethods = 'get post put patch delete'.split(' ')
 const methodsWithData = 'post put patch'.split(' ')
 
-function prepare(api, stem, path = '', defaults = {}) {
 
-    defaults = clone(defaults)
+function prepare(api, stem, path = '') {
 
     if (!stem) {
         stem = api
         api.axios = Axios.create(api.defaults)
         api = api.methods
-    }
-
-    let {_defaults} = api
-    if (_defaults) {
-        assign(defaults, _defaults)
     }
 
     for (let branch in api) {
@@ -36,6 +30,7 @@ function prepare(api, stem, path = '', defaults = {}) {
 
         let leaf = api[branch]
 
+        // Todo: functions that have further properties
         if (typeof leaf == 'function') {
 
             api[branch] = function () {
@@ -45,14 +40,9 @@ function prepare(api, stem, path = '', defaults = {}) {
                 let {_deep} = schema
                 if (_deep) {
 
-                    // let subApi = {
-                    //     methods: schema,
-                    //     defaults: assign({}, stem.defaults, defaults)
-                    // }
-
                     let subPath = compact([path, branch, _deep.url]).join('/')
 
-                    prepare(schema, stem, subPath, clone(defaults))
+                    prepare(schema, stem, subPath)
 
                     return schema
                     
@@ -66,9 +56,17 @@ function prepare(api, stem, path = '', defaults = {}) {
                         schema[method][placeForArguments] = arguments[0]
                     }
     
-                    for (let method in pick(schema, allMethods)) {
+                    // Todo: Make this the default approach
+                    let methods = pick(schema, allMethods)
+                    if (isEmpty(methods)) {
+                        let {method} = schema
+                        if (!method) method = 'get'
+                        methods[method] = schema
+                    }
+
+                    for (let method in methods) {
     
-                        let args = assign(defaults, schema[method])
+                        let args = methods[method]
     
                         let url = path + (args.skipName ? '' : `/${branch}`)
     
@@ -78,8 +76,7 @@ function prepare(api, stem, path = '', defaults = {}) {
                             url += '/' + additionalUrl.join('/')
                         }
     
-                        let config = {url, method}
-    
+                        let request = assign(new class Request{}, {url, method})    
     
                         let {formData} = args
     
@@ -97,36 +94,45 @@ function prepare(api, stem, path = '', defaults = {}) {
                                 form.append(key, data, omit(part, 'data'))
                             }
     
-                            config.data = form
-                            config.headers = form.getHeaders()
+                            request.data = form
+                            request.headers = form.getHeaders()
     
                         } else if (args !== true) {
     
-                            assign(config, pick(args, ['data', 'params']))
+                            assign(request, pick(args, ['data', 'params']))
         
                         }
                                             
                         var tryExecute = new Promise((resolve, reject) => {
-                            console.log(config)
-                            stem.axios.request(config).then(response => {
-                                let {_header} = response.request
+                            console.log(request)
+                            stem.axios.request(request).then(response => {
+
                                 let {status, data} = response
-                                console.log({status, data})
+                                response = assign(new class Response{}, {status, data})
+                                console.log(response)
                                 resolve(data)    
                             }).catch(error => {
+                                error = assign(new class Error{}, error)
                                 console.log(error)
                                 // let {response} = error
                                 // if (response && response.status == 500) return
-                                if (error.response) throw (error)
-                                sleep(10000).then(() => {
-                                    resolve(tryExecute)
-                                })
+                                if (error.response) reject(error)
+                                if (error.code == 'ETIMEDOUT')
+                                {
+                                    process.nextTick(() => {
+                                        sleep(3000).then(() => {
+                                            resolve(tryExecute)
+                                        })
+                                    })
+                                }
                             })
                         })
-    
+
+                        return tryExecute
+
                     }
 
-                    return tryExecute
+
 
                 }
 
@@ -134,7 +140,7 @@ function prepare(api, stem, path = '', defaults = {}) {
             }
 
         } else {
-            prepare(leaf, stem, `${path}/${branch}`, clone(defaults))
+            prepare(leaf, stem, [path, branch].join('/'))
         }
 
     }
