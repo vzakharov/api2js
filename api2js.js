@@ -1,8 +1,8 @@
 const Axios = require('axios')
-const _ = require('lodash')
+
 const {
     assign, clone, compact, isArray, isEmpty, omit, pick, isString, isFunction
-} = _
+} = require('lodash')
 
 const Form = require('form-data')
 
@@ -10,20 +10,19 @@ const {
     sleep
 } = require('vz-utils')
 
-
 const allMethods = 'get post put patch delete'.split(' ')
 const methodsWithData = 'post put patch'.split(' ')
 
 
-function prepare(api, stem, path = '') {
+function awaken(api, stem, path = '') {
 
     if (!stem) {
         stem = api
-        api.axios = Axios.create(api.defaults)
-        api = api.methods
+        stem._axios = Axios.create(stem._defaults)
+        // api = api.methods
     }
 
-    for (let branch in omit(api, '_')) {
+    for (let branch in api) {
 
         // Todo: think of a better way to skip
         if (branch[0] == '_') continue
@@ -42,7 +41,7 @@ function prepare(api, stem, path = '') {
 
                     let subPath = compact([path, _deep.skipName ? null :  branch, _deep.url]).join('/')
 
-                    prepare(schema, stem, subPath)
+                    awaken(schema, stem, subPath)
 
                     return schema
                     
@@ -108,10 +107,28 @@ function prepare(api, stem, path = '') {
                         }
                         
                         function tryExecute(resolve, reject) {
+                            let {rateLimit} = stem._options || {}
+                            let {lastCalled} = stem._state || {}
+                            let timestamp = new Date()
+                            console.log(timestamp)
+                            if (rateLimit) {
+                                if (lastCalled) {
+                                    let delta = timestamp - lastCalled
+                                    if (delta < rateLimit) {
+                                        setTimeout(
+                                            () => tryExecute(resolve, reject), 
+                                            rateLimit - delta
+                                        )
+                                        return
+                                    }
+                                }
+                                stem._state.lastCalled = timestamp
+                            }
                             console.log(request)
-                            stem.axios.request(request).then(response => {
+                            stem._axios.request(request).then(response => {
                                 let {status, data, headers} = response
                                 response = assign(new class Response{}, {status, data, headers})
+                                console.log(new Date())
                                 console.log(response)
                                 let {whatToReturn} = args
                                 if (whatToReturn) {
@@ -125,13 +142,19 @@ function prepare(api, stem, path = '') {
                                 }
                             }).catch(error => {
                                 error = assign(new class Error{}, error)
+                                console.log(new Date())
                                 console.log(error)
-                                let {response} = error
-                                if (response && response.status == 500) return
-                                if (error.response) reject(error)
-                                if (error.code == 'ETIMEDOUT') {
-                                    resolve(new Promise(tryExecute))
-                                }
+                                let {_onError} = stem
+                                if (_onError)
+                                    resolve(_onError({tryExecute, stem, error, resolve, reject}))
+                                // resolve(stem._errorHandler(error))
+                                // let {response, code} = error
+                                // if (response && response.status == 500) return
+                                // if (response && response.status == 403)
+                                // if (response) reject(error)
+                                // if (code == 'ETIMEDOUT') {
+                                //     resolve(new Promise(tryExecute))
+                                // }
                             })
                         }
 
@@ -147,7 +170,7 @@ function prepare(api, stem, path = '') {
             }
 
         } else {
-            prepare(leaf, stem, [path, branch].join('/'))
+            awaken(leaf, stem, [path, branch].join('/'))
         }
 
     }
@@ -157,4 +180,4 @@ function prepare(api, stem, path = '') {
 }
 
 
-module.exports = {prepare}
+module.exports = {awaken}
