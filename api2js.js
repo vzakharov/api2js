@@ -1,7 +1,7 @@
 const Axios = require('axios')
 const _ = require('lodash')
 const {
-    assign, clone, compact, isArray, isEmpty, omit, pick
+    assign, clone, compact, isArray, isEmpty, omit, pick, isString, isFunction
 } = _
 
 const Form = require('form-data')
@@ -23,7 +23,7 @@ function prepare(api, stem, path = '') {
         api = api.methods
     }
 
-    for (let branch in api) {
+    for (let branch in omit(api, '_')) {
 
         // Todo: think of a better way to skip
         if (branch[0] == '_') continue
@@ -40,7 +40,7 @@ function prepare(api, stem, path = '') {
                 let {_deep} = schema
                 if (_deep) {
 
-                    let subPath = compact([path, branch, _deep.url]).join('/')
+                    let subPath = compact([path, _deep.skipName ? null :  branch, _deep.url]).join('/')
 
                     prepare(schema, stem, subPath)
 
@@ -67,13 +67,17 @@ function prepare(api, stem, path = '') {
                     for (let method in methods) {
     
                         let args = methods[method]
-    
+
+                        if (args.skipDeep) {
+                            path = ''
+                        }
+
                         let url = path + (args.skipName ? '' : `/${branch}`)
     
                         let additionalUrl = args.url
                         if (additionalUrl) {
                             if (!isArray(additionalUrl)) additionalUrl = [additionalUrl]
-                            url += '/' + additionalUrl.join('/')
+                            url += (args.skipDeep ? '' : '/') + additionalUrl.join('/')
                         }
     
                         let request = assign(new class Request{}, {url, method})    
@@ -99,36 +103,39 @@ function prepare(api, stem, path = '') {
     
                         } else if (args !== true) {
     
-                            assign(request, pick(args, ['data', 'params']))
+                            assign(request, pick(args, ['data', 'params', 'headers']))
         
                         }
-                                            
-                        var tryExecute = new Promise((resolve, reject) => {
+                        
+                        function tryExecute(resolve, reject) {
                             console.log(request)
                             stem.axios.request(request).then(response => {
-
-                                let {status, data} = response
-                                response = assign(new class Response{}, {status, data})
+                                let {status, data, headers} = response
+                                response = assign(new class Response{}, {status, data, headers})
                                 console.log(response)
-                                resolve(data)    
+                                let {whatToReturn} = args
+                                if (whatToReturn) {
+                                    if (isString(whatToReturn)) {
+                                        resolve(response[whatToReturn])
+                                    } else if (isFunction(whatToReturn)) {
+                                        resolve(whatToReturn(response))
+                                    }
+                                } else {
+                                    resolve(data)
+                                }
                             }).catch(error => {
                                 error = assign(new class Error{}, error)
                                 console.log(error)
-                                // let {response} = error
-                                // if (response && response.status == 500) return
+                                let {response} = error
+                                if (response && response.status == 500) return
                                 if (error.response) reject(error)
-                                if (error.code == 'ETIMEDOUT')
-                                {
-                                    process.nextTick(() => {
-                                        sleep(3000).then(() => {
-                                            resolve(tryExecute)
-                                        })
-                                    })
+                                if (error.code == 'ETIMEDOUT') {
+                                    resolve(new Promise(tryExecute))
                                 }
                             })
-                        })
+                        }
 
-                        return tryExecute
+                        return new Promise(tryExecute)
 
                     }
 
