@@ -36,6 +36,12 @@ function awaken(api, stem, path = '') {
 
                 let schema = leaf(... arguments)
 
+                let {defaults} = schema
+                if (defaults) {
+                    arguments[0] = assign(defaults, arguments[0])
+                    schema = leaf(... arguments)
+                }
+
                 let {_deep} = schema
                 if (_deep) {
 
@@ -110,7 +116,6 @@ function awaken(api, stem, path = '') {
                             let {rateLimit} = stem._options || {}
                             let {lastCalled} = stem._state || {}
                             let timestamp = new Date()
-                            console.log(timestamp)
                             if (rateLimit) {
                                 if (lastCalled) {
                                     let delta = timestamp - lastCalled
@@ -124,10 +129,11 @@ function awaken(api, stem, path = '') {
                                 }
                                 stem._state.lastCalled = timestamp
                             }
+                            console.log(timestamp)
                             console.log(request)
                             stem._axios.request(request).then(response => {
                                 let {status, data, headers} = response
-                                response = assign(new class Response{}, {status, data, headers})
+                                response = assign(new class Response{}, {request, status, data, headers})
                                 console.log(new Date())
                                 console.log(response)
                                 let {whatToReturn} = args
@@ -142,19 +148,14 @@ function awaken(api, stem, path = '') {
                                 }
                             }).catch(error => {
                                 error = assign(new class Error{}, error)
+                                error._request = request
                                 console.log(new Date())
-                                console.log(error)
+                                console.error(error)
                                 let {_onError} = stem
                                 if (_onError)
                                     resolve(_onError({tryExecute, stem, error, resolve, reject}))
-                                // resolve(stem._errorHandler(error))
-                                // let {response, code} = error
-                                // if (response && response.status == 500) return
-                                // if (response && response.status == 403)
-                                // if (response) reject(error)
-                                // if (code == 'ETIMEDOUT') {
-                                //     resolve(new Promise(tryExecute))
-                                // }
+                                else
+                                    reject(error)
                             })
                         }
 
