@@ -1,7 +1,7 @@
 const Axios = require('axios')
 
 const {
-    assign, clone, compact, isArray, isEmpty, omit, pick, isString, isFunction
+    assign, clone, compact, isArray, isEmpty, omit, pick, isString, isFunction, isUndefined
 } = require('lodash')
 
 const Form = require('form-data')
@@ -14,11 +14,12 @@ const allMethods = 'get post put patch delete'.split(' ')
 const methodsWithData = 'post put patch'.split(' ')
 
 
-function awaken(api, stem, path = '') {
+function awaken(api, stem, path = '', passOn = {}) {
 
     if (!stem) {
         stem = api
         stem._axios = Axios.create(stem._defaults)
+        stem._state = {}
         // api = api.methods
     }
 
@@ -46,8 +47,9 @@ function awaken(api, stem, path = '') {
                 if (_deep) {
 
                     let subPath = compact([path, _deep.skipName ? null :  branch, _deep.url]).join('/')
+                    let {passOn} = _deep
 
-                    awaken(schema, stem, subPath)
+                    awaken(schema, stem, subPath, passOn)
 
                     return schema
                     
@@ -73,11 +75,12 @@ function awaken(api, stem, path = '') {
     
                         let args = methods[method]
 
+                        let thisPath = path
                         if (args.skipDeep) {
-                            path = ''
+                            thisPath = ''
                         }
 
-                        let url = path + (args.skipName ? '' : `/${branch}`)
+                        let url = thisPath + (args.skipName ? '' : `/${branch}`)
     
                         let additionalUrl = args.url
                         if (additionalUrl) {
@@ -85,7 +88,10 @@ function awaken(api, stem, path = '') {
                             url += (args.skipDeep ? '' : '/') + additionalUrl.join('/')
                         }
     
-                        let request = assign(new class Request{}, {url, method})    
+                        let request = new class Request{}
+                        
+                        assign(request, passOn)
+                        assign(request, {url, method})    
     
                         let {formData} = args
     
@@ -108,58 +114,90 @@ function awaken(api, stem, path = '') {
     
                         } else if (args !== true) {
     
-                            assign(request, pick(args, ['data', 'params', 'headers']))
+                            assign(request, pick(args, ['data', 'params', 'headers', 'baseURL']))
         
                         }
                         
-                        function tryExecute(resolve, reject) {
-                            let {rateLimit} = stem._options || {}
-                            let {lastCalled} = stem._state || {}
-                            let timestamp = new Date()
+                        async function tryExecute(executeArgs = {}) {
+                            let { rateLimit, maxSimultaneousRequests } = stem._options || {}
+
                             if (rateLimit) {
-                                if (lastCalled) {
-                                    let delta = timestamp - lastCalled
+                                while(true) {
+                                    let {lastCalled} = stem._state || {}
+                                    if (!lastCalled) 
+                                        break
+                                    let delta = new Date() - lastCalled
                                     if (delta < rateLimit) {
-                                        setTimeout(
-                                            () => tryExecute(resolve, reject), 
-                                            rateLimit - delta
-                                        )
-                                        return
+                                        await sleep(delta)
+                                    } else {
+                                        break
                                     }
                                 }
-                                stem._state.lastCalled = timestamp
+                                stem._state.lastCalled = new Date()
                             }
-                            console.log(timestamp)
+
+                            if ( maxSimultaneousRequests ) {
+                                while (stem._state.nSimultaneousRequests >= maxSimultaneousRequests) {
+                                    // Todo: fix to proper await promise 👇
+                                    await stem._state.promise
+                                }
+                            }
+
+                            // console.log(new Date())
                             console.log(request)
-                            stem._axios.request(request).then(response => {
+                            try {
+                                if ( isUndefined(stem._state.nSimultaneousRequests) )
+                                    stem._state.nSimultaneousRequests = 0
+                                stem._state.nSimultaneousRequests++
+                                console.log(pick(stem._state, 'nSimultaneousRequests'))
+                                let promise = stem._axios.request(request) 
+                                assign(stem._state, {promise})
+                                let response = await promise
+                                stem._state.nSimultaneousRequests--
                                 let {status, data, headers} = response
                                 response = assign(new class Response{}, {request, status, data, headers})
-                                console.log(new Date())
+                                // console.log(new Date())
                                 console.log(response)
-                                let {whatToReturn} = args
-                                if (whatToReturn) {
-                                    if (isString(whatToReturn)) {
-                                        resolve(response[whatToReturn])
-                                    } else if (isFunction(whatToReturn)) {
-                                        resolve(whatToReturn(response))
+                                let {whatToReturn, paginationKey, paginationFinishedValue, paginate} = args
+                                let result = (() => {
+                                    if (whatToReturn) {
+                                        if (isString(whatToReturn)) {
+                                            return data[whatToReturn]
+                                        } else if (isFunction(whatToReturn)) {
+                                            return whatToReturn(response)
+                                        }
+                                    } else {
+                                        return data
+                                    }    
+                                })()
+                                if (paginationKey) {
+                                    if (!executeArgs.results)
+                                        executeArgs.results = []
+                                    executeArgs.results.push(... result)
+                                    if (data[paginationKey] == paginationFinishedValue) {
+                                        return executeArgs.results
+                                    } else {
+                                        paginate(request, response)
+                                        return await tryExecute(executeArgs)
                                     }
                                 } else {
-                                    resolve(data)
+                                    return result
                                 }
-                            }).catch(error => {
+                            } catch (error) {
+                                stem._state.nSimultaneousRequests--
                                 error = assign(new class Error{}, error)
                                 error._request = request
-                                console.log(new Date())
+                                // console.log(new Date())
                                 console.error(error)
                                 let {_onError} = stem
                                 if (_onError)
-                                    resolve(_onError({tryExecute, stem, error, resolve, reject}))
+                                    return await _onError({tryExecute, executeArgs, stem, error})
                                 else
-                                    reject(error)
-                            })
+                                    throw(error)
+                            }
                         }
 
-                        return new Promise(tryExecute)
+                        return tryExecute()
 
                     }
 
@@ -171,7 +209,7 @@ function awaken(api, stem, path = '') {
             }
 
         } else {
-            awaken(leaf, stem, [path, branch].join('/'))
+            awaken(leaf, stem, [path, branch].join('/'), passOn)
         }
 
     }
