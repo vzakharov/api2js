@@ -1,7 +1,8 @@
 const Axios = require('axios')
 
 const {
-    assign, clone, compact, isArray, isEmpty, omit, pick, isString, isFunction, isUndefined
+    assign, clone, compact, isArray, isBoolean, isEmpty, isString, isFunction, isUndefined,
+    omit, pick, 
 } = require('lodash')
 
 const Form = require('form-data')
@@ -37,7 +38,7 @@ function awaken(api, stem, path = '', passOn = {}) {
 
                 let schema = leaf(... arguments)
 
-                let {defaults} = schema
+                let { defaults } = schema
                 if (defaults) {
                     arguments[0] = assign(defaults, arguments[0])
                     schema = leaf(... arguments)
@@ -118,7 +119,7 @@ function awaken(api, stem, path = '', passOn = {}) {
         
                         }
                         
-                        async function tryExecute(executeArgs = {}) {
+                        async function execute(executeArgs = {}) {
                             let { rateLimit, maxSimultaneousRequests } = stem._options || {}
 
                             if (rateLimit) {
@@ -158,7 +159,8 @@ function awaken(api, stem, path = '', passOn = {}) {
                                 response = assign(new class Response{}, {request, status, data, headers})
                                 // console.log(new Date())
                                 console.log(response)
-                                let {whatToReturn, paginationKey, paginationFinishedValue, paginate} = args
+
+                                let { whatToReturn } = args
                                 let result = (() => {
                                     if (whatToReturn) {
                                         if (isString(whatToReturn)) {
@@ -170,15 +172,41 @@ function awaken(api, stem, path = '', passOn = {}) {
                                         return data
                                     }    
                                 })()
-                                if (paginationKey) {
+
+                                let { pagination } = args
+                                if ( pagination === true ) pagination = {}
+
+                                if (pagination) {
+                                    let { 
+                                        startKey, limitKey, keyLocation, callback
+                                    } = { 
+                                        startKey: 'start', limitKey: 'limit', keyLocation: 'data',
+                                        ... pagination 
+                                    }
+    
+                                    let state = request[keyLocation]
+
+                                    if ( !callback ) { // startKey && limitKey ) {
+                                        callback = () =>
+                                            state[startKey] += state[limitKey]
+                                    }
+    
                                     if (!executeArgs.results)
                                         executeArgs.results = []
-                                    executeArgs.results.push(... result)
-                                    if (data[paginationKey] == paginationFinishedValue) {
-                                        return executeArgs.results
+                                    let { results } = executeArgs
+                                    results.push(... result)
+                                    let paginationFinished = () => {
+                                        if ( isBoolean(pagination.criterion) )
+                                            return data[pagination.key] == pagination.criterion
+                                        else //if ( pagination.criterion == 'length' )
+                                            return result.length < state[limitKey]
+                                        // throw(new Error('No pagination criterion defined!'))
+                                    }
+                                    if (paginationFinished()) {
+                                        return results
                                     } else {
-                                        paginate(request, response)
-                                        return await tryExecute(executeArgs)
+                                        callback(request, response)
+                                        return await execute(executeArgs)
                                     }
                                 } else {
                                     return result
@@ -191,13 +219,13 @@ function awaken(api, stem, path = '', passOn = {}) {
                                 console.error(error)
                                 let {_onError} = stem
                                 if (_onError)
-                                    return await _onError({tryExecute, executeArgs, stem, error})
+                                    return await _onError({execute, executeArgs, stem, error})
                                 else
                                     throw(error)
                             }
                         }
 
-                        return tryExecute()
+                        return execute()
 
                     }
 
